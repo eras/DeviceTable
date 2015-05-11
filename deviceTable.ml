@@ -27,24 +27,24 @@ let main () =
     let map = List.combine devices shortlinks in
     map
   in
+  let module P = Containers_misc.PrintBox in
+  let grid = Array.make_matrix 7 5 P.empty in
   for row' = 0 to 5 do
     let row = 5 - row' in
     if row' = 0 then (
-      Printf.printf "     ";
       for col = 0 to 3 do
-        Printf.printf "%8d" col;
+        grid.(0).(col + 1) <- Printf.ksprintf P.text "%8d" col;
       done;
-      Printf.printf "\n";
     );
-    Printf.printf "%3d " row;
+    grid.(row' + 1).(0) <- Printf.ksprintf P.text "%3d" row;
     for col = 0 to 3 do
       let disk = 
         try Some (List.assoc (Printf.sprintf "%d-%d" row col) links)
         with Not_found -> None
       in
-      Printf.printf "%8s" (match disk with None -> "" | Some disk -> disk)
+      grid.(row' + 1).(col + 1) <- Printf.ksprintf P.text "%8s" (match disk with None -> "" | Some disk -> disk);
     done;
-    Printf.printf "\n"
-  done
+  done;
+  P.output stdout (P.grid grid)
 
 let _ = main ()
