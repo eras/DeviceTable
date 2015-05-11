@@ -1,0 +1,10 @@
+<*>: package(cmdliner), \
+	 package(batteries), \
+	 warn(-40), \
+	 package(ppx_deriving.show), \
+	 package(toml), \
+	 package(containers.misc), \
+	 package(text), \
+	 package(re), \
+	 package(re.pcre)
+true: debug

@@ -11,14 +11,18 @@ let list_files dir =
   Unix.closedir dir;
   files
 
+let pmatch ~pat = Re.execp (Re_pcre.re pat |> Re.compile)
+
+let extract ~pat str = Re.get_all (Re.exec (Re_pcre.re pat |> Re.compile) str)
+
 let main () = 
   let slot_dir = "/dev/disk/by-slot" in
-  let devices = List.filter (Pcre.pmatch ~pat:"^[0-9]+-[0-9]+$") (list_files
+  let devices = List.filter (pmatch ~pat:"^[0-9]+-[0-9]+$") (list_files
   slot_dir) in
   let links =
     let full_orig = List.map (fun x -> slot_dir ^ "/" ^ x) devices in
     let links = List.map Unix.readlink full_orig in
-    let shorten name = (Pcre.extract ~pat:"[^/]+$" name).(0) in
+    let shorten name = (extract ~pat:"[^/]+$" name).(0) in
     let shortlinks = List.map shorten links in
     let map = List.combine devices shortlinks in
     map

@@ -1,0 +1,10 @@
+B _build
+FLG -w -40
+PKG cmdliner
+PKG batteries
+PKG ppx_deriving.show
+PKG toml
+PKG containers.misc
+PKG text
+PKG re
+PKG re.pcre
