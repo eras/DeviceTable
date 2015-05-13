@@ -3,7 +3,8 @@ let list_files dir =
   let rec get_files aux =
     match try Some (Unix.readdir dir)
           with End_of_file -> None 
-          with
+    with
+    | Some ("." | "..") -> get_files aux
     | Some file -> get_files (file::aux)
     | None -> List.rev aux
   in
