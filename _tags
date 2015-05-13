@@ -4,6 +4,7 @@
 	 package(ppx_deriving.show), \
 	 package(toml), \
 	 package(containers.misc), \
+	 package(containers.io), \
 	 package(text), \
 	 package(re), \
 	 package(re.pcre)
