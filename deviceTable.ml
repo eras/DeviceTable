@@ -119,10 +119,10 @@ let device_of_name name = read_dev ("/sys/block/" ^ name ^ "/dev")
 
 let load_md_info base =
   let md = base ^ "/md" in
-  let num_disks = first_line (md ^ "/raid_disks") |> int_of_string in
   let devices =
-    CCList.range 0 (num_disks - 1)
-    |> List.map (fun n -> Printf.sprintf "%s/rd%d/block/dev" md n)
+    list_files md
+    |> List.filter (pmatch ~pat:"^dev-.*")
+    |> List.map (fun n ->Printf.sprintf "%s/%s/block/dev" md n)
     |> List.map read_dev
   in
   let md_dev = read_dev (base ^ "/dev") in
