@@ -69,10 +69,6 @@ let parent_device_of_device_name name =
   then None
   else Some parent
 
-let name_of_md_device = function
-  | Device (md, x) when md = md_major -> Printf.sprintf "md%d" x
-  | _ -> failwith "not an md number"
-
 let read_dev dev_file =
   first_line dev_file |> Re.split (Re_pcre.re ":" |> Re.compile) |> function
   | major::minor::_ -> Device (int_of_string major, int_of_string minor)
@@ -148,7 +144,7 @@ let md_of_partitions mds partitions =
     match (partitions |> find_opt @@ fun partition ->
            List.mem partition md.devices) with
     | None -> None
-    | Some partition -> Some (name_of_md_device md.md_dev ^ "(" ^ CCOpt.get "?" (name_of_block_device partition) ^ ")") )
+    | Some partition -> Some (CCOpt.get "?" (name_of_block_device md.md_dev) ^ "(" ^ CCOpt.get "?" (name_of_block_device partition) ^ ")") )
   |> function
   | [] -> None
   | info -> Some (String.concat "\n" info)
