@@ -206,7 +206,7 @@ let main () =
       let md = md_of_partitions mds partitions in
       let mounts =
         CCList.filter_map
-          (fun partition -> try Some (List.assoc partition mounts) with Not_found -> None)
+          (fun partition -> try Some ((List.assoc partition mounts).m_mountpoint ^ "(" ^ name_of_block_device partition ^ ")") with Not_found -> None)
           partitions
       in
       let label =
@@ -215,7 +215,7 @@ let main () =
           (match md with
            | None -> ""
            | Some md -> "\n" ^ md)
-          (mounts |> List.map (fun m -> "\n" ^ m.m_mountpoint) |> String.concat "")
+          (mounts |> List.map (fun m -> "\n" ^ m) |> String.concat "")
       in
       grid.(row' + 1).(col + 1) <- label;
     done;
