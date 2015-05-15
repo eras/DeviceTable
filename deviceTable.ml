@@ -131,9 +131,9 @@ let load_all_md_info () =
 
 let name_of_block_device =
   let names = flip_list @@ block_devices () in
-  fun name ->
-    try Some (List.assoc name names)
-    with Not_found -> None
+  fun ((Device (major, minor)) as device) ->
+    try List.assoc device names
+    with Not_found -> Printf.sprintf "%d:%d" major minor
 
 let find_opt p xs =
   try Some (List.find p xs)
@@ -144,7 +144,7 @@ let md_of_partitions mds partitions =
     match (partitions |> find_opt @@ fun partition ->
            List.mem partition md.devices) with
     | None -> None
-    | Some partition -> Some (CCOpt.get "?" (name_of_block_device md.md_dev) ^ "(" ^ CCOpt.get "?" (name_of_block_device partition) ^ ")") )
+    | Some partition -> Some (name_of_block_device md.md_dev ^ "(" ^ name_of_block_device partition ^ ")") )
   |> function
   | [] -> None
   | info -> Some (String.concat "\n" info)
