@@ -45,13 +45,6 @@ let drop_while f xs =
 
 let trim_begin = Re.replace (Re_pcre.re "^ *" |> Re.compile) ~f:(const "")
 
-let device_majors =
-  let devices = CCIO.with_in "/proc/devices" CCIO.read_lines_l in
-  let block_devices = devices |> drop_while (( <> ) "Block devices:") |> CCList.drop 1 |> List.map trim_begin in
-  let split = block_devices |> List.map (Re.split (Re_pcre.re " " |> Re.compile)) in
-  let devices = split |> CCList.filter_map (function major::name::_ -> Some (name, int_of_string major) | _ -> None) in
-  devices
-
 let partitions =
   CCIO.with_in "/proc/partitions" CCIO.read_lines_l
   |> CCList.drop 2
@@ -60,8 +53,6 @@ let partitions =
   |> CCList.filter_map @@ function
   | major::minor::_blocks::name::_ -> Some (name, Device (int_of_string major, int_of_string minor))
   | _ -> None 
-
-let md_major = List.assoc "md" device_majors
 
 let parent_device_of_device_name name =
   let parent = Re.replace_string (Re_pcre.re "[0-9]+$" |> Re.compile) ~by:"" name in
