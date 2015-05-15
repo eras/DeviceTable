@@ -45,6 +45,38 @@ let drop_while f xs =
 
 let trim_begin = Re.replace (Re_pcre.re "^ *" |> Re.compile) ~f:(const "")
 
+let dev_filesystems =
+  CCIO.with_in "/proc/filesystems" CCIO.read_lines_l
+  (* TODO: really the prefixing whitespace should be part of the split as well *)
+  |> List.map (Re.split (Re_pcre.re "\t" |> Re.compile))
+  |> CCList.filter_map @@ function
+  | "nodev"::_ -> None
+  | filesystem::[] -> Some filesystem
+  | other ->
+    Printf.eprintf "device-table: warning: unknown entry %s in /proc/filesystem\n%!"
+      (String.concat "," other);
+    None
+
+let device_of_stat s = Device (s.Unix.st_rdev lsr 8, s.Unix.st_rdev land 0xff)
+
+type mount = {
+  m_mountpoint : string;
+  m_filesystem : string;
+}
+
+let mounts =
+  CCIO.with_in "/proc/mounts" CCIO.read_lines_l
+  |> List.map (Re.split (Re_pcre.re " " |> Re.compile))
+  |> CCList.filter_map @@ function
+  | "rootfs"::_ ->
+    None
+  | device::m_mountpoint::m_filesystem::flags::_nr1::_nr2::_ when List.mem m_filesystem dev_filesystems ->
+    ( try Some (device_of_stat (Unix.stat device), { m_mountpoint; m_filesystem })
+      with exn ->
+        Printf.eprintf "Error while statting %s: %s\n" device (Printexc.to_string exn);
+        None )
+  | _ -> None
+
 let partitions =
   CCIO.with_in "/proc/partitions" CCIO.read_lines_l
   |> CCList.drop 2
@@ -93,7 +125,7 @@ let block_devices () =
   |> CCList.map (project_to_2nd (fun s -> base ^ "/" ^ s))
   |> CCList.map (project2nd Unix.stat)
   |> CCList.filter (fun (_, s) -> s.Unix.st_kind = Unix.S_BLK)
-  |> CCList.map (project2nd @@ fun s -> Device (s.Unix.st_rdev lsr 8, s.Unix.st_rdev land 0xff))
+  |> CCList.map (project2nd @@ device_of_stat)
 
 let expand_second xs =
   xs
@@ -172,12 +204,18 @@ let main () =
       let device = CCOpt.map device_of_name device_name in
       let partitions = CCOpt.get [] (CCOpt.map (flip List.assoc disks) device) in
       let md = md_of_partitions mds partitions in
+      let mounts =
+        CCList.filter_map
+          (fun partition -> try Some (List.assoc partition mounts) with Not_found -> None)
+          partitions
+      in
       let label =
-        Printf.ksprintf P.text "%8s%s"
+        Printf.ksprintf P.text "%s%s%s"
           (CCOpt.get "" device_name)
           (match md with
            | None -> ""
            | Some md -> "\n" ^ md)
+          (mounts |> List.map (fun m -> "\n" ^ m.m_mountpoint) |> String.concat "")
       in
       grid.(row' + 1).(col + 1) <- label;
     done;
