@@ -203,11 +203,16 @@ let main () =
       in
       let device = CCOpt.map device_of_name device_name in
       let partitions = CCOpt.get [] (CCOpt.map (flip List.assoc disks) device) in
-      let md = md_of_partitions mds partitions in
+      let partitions' =
+        match device with
+        | None -> partitions
+        | Some device -> device::partitions
+      in
+      let md = md_of_partitions mds partitions' in
       let mounts =
         CCList.filter_map
           (fun partition -> try Some ((List.assoc partition mounts).m_mountpoint ^ "(" ^ name_of_block_device partition ^ ")") with Not_found -> None)
-          partitions
+          partitions'
       in
       let label =
         Printf.ksprintf P.text "%s%s%s"
