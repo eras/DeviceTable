@@ -35,7 +35,7 @@ type sync_action' = {
   sync_completed : (int64 * int64);
 }
 
-type sync_action = SyncIdle | SyncRecover of sync_action' | SyncOther of string
+type sync_action = SyncIdle | SyncCheck of sync_action' | SyncRecover of sync_action' | SyncOther of string
 
 type md = {
   md_dev       : device;
@@ -169,10 +169,14 @@ let load_md_info base =
   in
   let md_dev = read_dev (base ^ "/dev") in
   let sync_action =
+    let sync_action () =
+      { sync_speed     = info "sync_speed" int_of_string;
+        sync_completed = info "sync_completed" (fun s -> Scanf.sscanf s "%Ld / %Ld" (fun a b -> (a, b))) }
+    in
     match info "sync_action" identity with
-    | "recover" -> SyncRecover { sync_speed     = info "sync_speed" int_of_string;
-                                 sync_completed = info "sync_completed" (fun s -> Scanf.sscanf s "%Ld / %Ld" (fun a b -> (a, b))) }
+    | "recover" -> SyncRecover (sync_action ())
     | "idle" -> SyncIdle
+    | "check" -> SyncCheck (sync_action ())
     | other -> SyncOther other
   in
   { md_dev; devices; sync_action;
@@ -297,8 +301,13 @@ let main () =
       (name_of_block_device md.md_dev)
       (match md.sync_action with
        | SyncIdle  -> "idle"
-       | SyncRecover { sync_speed; sync_completed = (at, last) } ->
-         Printf.sprintf "recovering %.1f%% at %d kBps"
+       | ((SyncCheck { sync_speed; sync_completed = (at, last) })
+         | (SyncRecover { sync_speed; sync_completed = (at, last) })) as action ->
+         Printf.sprintf "%s %.1f%% at %d kBps"
+           (match action with
+            | SyncCheck _ -> "checking"
+            | SyncRecover _ -> "recovering"
+            | _ -> assert false)
            Int64.(to_float at /. to_float last *. 100.0)
            sync_speed 
        | SyncOther other -> other)
