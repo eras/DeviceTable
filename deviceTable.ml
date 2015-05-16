@@ -30,9 +30,22 @@ let first_line file =
 
 type device = Device of (int * int)
 
+type sync_action' = {
+  sync_speed     : int;
+  sync_completed : (int64 * int64);
+}
+
+type sync_action = SyncIdle | SyncRecover of sync_action' | SyncOther of string
+
 type md = {
-  md_dev  : device;
-  devices : device list;
+  md_dev       : device;
+  devices      : device list;
+  array_state  : [`Clean | `Other of string];
+  degraded     : int;
+  level        : [`Raid0 | `Raid1 | `Raid5 | `Raid6 | `Other of string];
+  mismatch_cnt : int;
+  raid_disks   : int;
+  sync_action  : sync_action;
 }
 
 let drop_while f xs =
@@ -136,8 +149,18 @@ let flip_list xs = List.map (fun (a, b) -> (b, a)) xs
 
 let device_of_name name = read_dev ("/sys/block/" ^ name ^ "/dev")
 
+let level_of_string = function
+  | "raid0" -> `Raid0
+  | "raid1" -> `Raid1
+  | "raid5" -> `Raid5
+  | "raid6" -> `Raid6
+  | other -> `Other other
+
+let identity a = a
+
 let load_md_info base =
   let md = base ^ "/md" in
+  let info name format = first_line (md ^ "/" ^ name) |> format in
   let devices =
     list_files md
     |> List.filter (pmatch ~pat:"^dev-.*")
@@ -145,7 +168,20 @@ let load_md_info base =
     |> List.map read_dev
   in
   let md_dev = read_dev (base ^ "/dev") in
-  { md_dev; devices }
+  let sync_action =
+    match info "sync_action" identity with
+    | "recover" -> SyncRecover { sync_speed     = info "sync_speed" int_of_string;
+                                 sync_completed = info "sync_completed" (fun s -> Scanf.sscanf s "%Ld / %Ld" (fun a b -> (a, b))) }
+    | "idle" -> SyncIdle
+    | other -> SyncOther other
+  in
+  { md_dev; devices; sync_action;
+    array_state    = info "array_state" (function "clean" -> `Clean | other -> `Other other);
+    degraded       = info "degraded" int_of_string;
+    level          = info "level" level_of_string;
+    mismatch_cnt   = info "mismatch_cnt" int_of_string;
+    raid_disks     = info "raid_disks" int_of_string;
+  }
 
 let load_all_md_info () =
   let bds = list_files_with_base "/sys/block" in
@@ -175,7 +211,7 @@ let md_of_partitions mds partitions =
 let main () = 
   let slot_dir = "/dev/disk/by-slot" in
   let devices = List.filter (pmatch ~pat:"^[0-9]+-[0-9]+$") (list_files
-  slot_dir) in
+                                                               slot_dir) in
   let links =
     let full_orig = List.map (fun x -> slot_dir ^ "/" ^ x) devices in
     let links = List.map Unix.readlink full_orig in
@@ -225,6 +261,18 @@ let main () =
       grid.(row' + 1).(col + 1) <- label;
     done;
   done;
-  P.output stdout (P.grid grid)
+  P.output stdout (P.grid grid);
+  Printf.printf "\n";
+  mds |> List.iter @@ fun md ->
+  if md.sync_action <> SyncIdle then
+    Printf.printf "%s status: %s\n%!"
+      (name_of_block_device md.md_dev)
+      (match md.sync_action with
+       | SyncIdle  -> "idle"
+       | SyncRecover { sync_speed; sync_completed = (at, last) } ->
+         Printf.sprintf "recovering %.1f%% at %d kBps"
+           Int64.(to_float at /. to_float last *. 100.0)
+           sync_speed 
+       | SyncOther other -> other)
 
 let _ = main ()
