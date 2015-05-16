@@ -198,6 +198,22 @@ let find_opt p xs =
   try Some (List.find p xs)
   with Not_found -> None
 
+type btrfs = {
+  btrfs_id      : string;
+  btrfs_label   : string;
+  btrfs_devices : device list;
+}
+
+let btrfs_info () =
+  let base = "/sys/fs/btrfs" in
+  let fs_ids = list_files base |> List.filter (pmatch ~pat:"^.+-.+-.+-.+-.+$") in
+  fs_ids |> List.map @@ fun fs_id ->
+  let fs_base = base ^ "/" ^ fs_id in
+  let devices = list_files_with_base (fs_base ^ "/devices") |> List.map (fun s -> s ^ "/dev") |> List.map read_dev in
+  { btrfs_id = fs_id;
+    btrfs_label = first_line (fs_base ^ "/label");
+    btrfs_devices = devices; }
+
 let md_of_partitions mds partitions =
   ( mds |> CCList.filter_map @@ fun md ->
     match (partitions |> find_opt @@ fun partition ->
@@ -207,6 +223,15 @@ let md_of_partitions mds partitions =
   |> function
   | [] -> None
   | info -> Some (String.concat "\n" info)
+
+let btrfss_for_partitions btrfs partitions =
+  let btrfs_for_partition partition =
+    btrfs |> CCList.filter_map @@ fun btrfs ->
+    if List.mem partition btrfs.btrfs_devices
+    then Some (partition, btrfs)
+    else None
+  in
+  CCList.map btrfs_for_partition partitions |> List.concat
 
 let main () = 
   let slot_dir = "/dev/disk/by-slot" in
@@ -224,6 +249,7 @@ let main () =
   let grid = Array.make_matrix 7 5 P.empty in
   let disks = disks () in
   let mds = load_all_md_info () in
+  let btrfs = btrfs_info () in
   for row' = 0 to 5 do
     let row = 5 - row' in
     if row' = 0 then (
@@ -250,13 +276,15 @@ let main () =
           (fun partition -> try Some ((List.assoc partition mounts).m_mountpoint ^ "(" ^ name_of_block_device partition ^ ")") with Not_found -> None)
           partitions'
       in
+      let btrfs = btrfss_for_partitions btrfs partitions' in
       let label =
-        Printf.ksprintf P.text "%s%s%s"
+        Printf.ksprintf P.text "%s%s%s%s"
           (CCOpt.get "" device_name)
           (match md with
            | None -> ""
            | Some md -> "\n" ^ md)
           (mounts |> List.map (fun m -> "\n" ^ m) |> String.concat "")
+          ((btrfs |> List.map @@ fun (partition, btrfs) -> "\n" ^ "btrfs " ^ btrfs.btrfs_label ^ "(" ^ name_of_block_device partition ^ ")") |> String.concat "")
       in
       grid.(row' + 1).(col + 1) <- label;
     done;
