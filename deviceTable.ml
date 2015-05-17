@@ -338,13 +338,13 @@ let main () =
        | ((SyncCheck { sync_speed; sync_completed = (at, last) })
          | (SyncRecover { sync_speed; sync_completed = (at, last) })) as action ->
          let fin = now +. Int64.(to_float last -. to_float at) /. 2.0 /. float sync_speed in
-         Printf.sprintf "%s %.1f%% completed (%d kBps), ETA %s"
+         Printf.sprintf "%s %.1f%% completed (%.1f Mi/s), ETA %s"
            (match action with
             | SyncCheck _ -> "checking"
             | SyncRecover _ -> "recovering"
             | _ -> assert false)
            Int64.(to_float at /. to_float last *. 100.0)
-           sync_speed
+           (float sync_speed /. 1024.)
            (string_of_time fin)
        | SyncOther other -> other)
 
