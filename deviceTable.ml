@@ -270,6 +270,52 @@ let string_of_tm { Unix.tm_sec = sec;
 let string_of_time t =
   string_of_tm (Unix.localtime t)
 
+type layout = {
+  l_devices_per_row : int list;
+}
+
+let layout = {
+  l_devices_per_row = [4; 4; 4; 4; 4; 4];
+}
+
+type ctx = {
+  links : (string * string) list;
+  disks : (device * device list) list;
+  mds : md CCList.t;
+  btrfs : btrfs list;
+}
+
+let label_of_position ctx row col =
+  let module P = Containers_misc.PrintBox in
+  let device_name = 
+    try Some (List.assoc (Printf.sprintf "%d-%d" row col) ctx.links)
+    with Not_found -> None
+  in
+  let device = CCOpt.map device_of_name device_name in
+  let partitions = CCOpt.get [] (CCOpt.map (flip List.assoc ctx.disks) device) in
+  let partitions' =
+    match device with
+    | None -> partitions
+    | Some device -> device::partitions
+  in
+  let md = md_of_partitions ctx.mds partitions' in
+  let mounts =
+    CCList.filter_map
+      (fun partition -> try Some ((List.assoc partition mounts).m_mountpoint ^ "(" ^ name_of_block_device partition ^ ")") with Not_found -> None)
+      partitions'
+  in
+  let btrfs = btrfss_for_partitions ctx.btrfs partitions' in
+  let label =
+    Printf.ksprintf P.text "%s%s%s%s"
+      (CCOpt.get "" device_name)
+      (match md with
+       | None -> ""
+       | Some md -> "\n" ^ md)
+      (mounts |> List.map (fun m -> "\n" ^ m) |> String.concat "")
+      ((btrfs |> List.map @@ fun (partition, btrfs) -> "\n" ^ "btrfs " ^ btrfs.btrfs_label ^ "(" ^ name_of_block_device partition ^ ")") |> String.concat "")
+  in
+  label
+
 let main () = 
   let slot_dir = "/dev/disk/by-slot" in
   let devices = List.filter (pmatch ~pat:"^[0-9]+-[0-9]+$") (list_files
@@ -284,52 +330,28 @@ let main () =
   in
   let module P = Containers_misc.PrintBox in
   let grid = Array.make_matrix 7 5 P.empty in
-  let disks = disks () in
-  let mds = load_all_md_info () in
-  let btrfs = btrfs_info () in
-  for row' = 0 to 5 do
+  let ctx =
+    let disks = disks () in
+    let mds   = load_all_md_info () in
+    let btrfs = btrfs_info () in
+    { links; disks; mds; btrfs }
+  in
+  for col = 0 to 3 do
+    grid.(0).(col + 1) <- Printf.ksprintf P.text "%8d" col;
+  done;
+  ( layout.l_devices_per_row
+    |> flip List.fold_left 0 @@ fun row' num_devices ->
     let row = 5 - row' in
-    if row' = 0 then (
-      for col = 0 to 3 do
-        grid.(0).(col + 1) <- Printf.ksprintf P.text "%8d" col;
-      done;
-    );
     grid.(row' + 1).(0) <- Printf.ksprintf P.text "%3d" row;
     for col = 0 to 3 do
-      let device_name = 
-        try Some (List.assoc (Printf.sprintf "%d-%d" row col) links)
-        with Not_found -> None
-      in
-      let device = CCOpt.map device_of_name device_name in
-      let partitions = CCOpt.get [] (CCOpt.map (flip List.assoc disks) device) in
-      let partitions' =
-        match device with
-        | None -> partitions
-        | Some device -> device::partitions
-      in
-      let md = md_of_partitions mds partitions' in
-      let mounts =
-        CCList.filter_map
-          (fun partition -> try Some ((List.assoc partition mounts).m_mountpoint ^ "(" ^ name_of_block_device partition ^ ")") with Not_found -> None)
-          partitions'
-      in
-      let btrfs = btrfss_for_partitions btrfs partitions' in
-      let label =
-        Printf.ksprintf P.text "%s%s%s%s"
-          (CCOpt.get "" device_name)
-          (match md with
-           | None -> ""
-           | Some md -> "\n" ^ md)
-          (mounts |> List.map (fun m -> "\n" ^ m) |> String.concat "")
-          ((btrfs |> List.map @@ fun (partition, btrfs) -> "\n" ^ "btrfs " ^ btrfs.btrfs_label ^ "(" ^ name_of_block_device partition ^ ")") |> String.concat "")
-      in
+      let label = label_of_position ctx row col in
       grid.(row' + 1).(col + 1) <- label;
     done;
-  done;
+    row' + 1 ) |> ignore;
   P.output stdout (P.grid grid);
   Printf.printf "\n";
   let now = Unix.gettimeofday () in
-  mds |> List.iter @@ fun md ->
+  ctx.mds |> List.iter @@ fun md ->
   if md.sync_action <> SyncIdle then
     Printf.printf "%s status: %s\n%!"
       (name_of_block_device md.md_dev)
