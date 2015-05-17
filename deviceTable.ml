@@ -237,6 +237,24 @@ let btrfss_for_partitions btrfs partitions =
   in
   CCList.map btrfs_for_partition partitions |> List.concat
 
+let string_of_tm { Unix.tm_sec = sec;
+                   tm_min = min;
+                   tm_hour = hour;
+                   tm_mday = mday;
+                   tm_mon = mon;
+                   tm_year = year } =
+  Printf.sprintf
+    "%04d-%02d-%02d %02d:%02d:%02d"
+    (year + 1900)
+    (mon + 1)
+    (mday)
+    (hour)
+    (min)
+    (sec)
+
+let string_of_time t =
+  string_of_tm (Unix.localtime t)
+
 let main () = 
   let slot_dir = "/dev/disk/by-slot" in
   let devices = List.filter (pmatch ~pat:"^[0-9]+-[0-9]+$") (list_files
@@ -295,6 +313,7 @@ let main () =
   done;
   P.output stdout (P.grid grid);
   Printf.printf "\n";
+  let now = Unix.gettimeofday () in
   mds |> List.iter @@ fun md ->
   if md.sync_action <> SyncIdle then
     Printf.printf "%s status: %s\n%!"
@@ -303,13 +322,15 @@ let main () =
        | SyncIdle  -> "idle"
        | ((SyncCheck { sync_speed; sync_completed = (at, last) })
          | (SyncRecover { sync_speed; sync_completed = (at, last) })) as action ->
-         Printf.sprintf "%s %.1f%% at %d kBps"
+         let fin = now +. Int64.(to_float last -. to_float at) /. 2.0 /. float sync_speed in
+         Printf.sprintf "%s %.1f%% completed (%d kBps), ETA %s"
            (match action with
             | SyncCheck _ -> "checking"
             | SyncRecover _ -> "recovering"
             | _ -> assert false)
            Int64.(to_float at /. to_float last *. 100.0)
-           sync_speed 
+           sync_speed
+           (string_of_time fin)
        | SyncOther other -> other)
 
 let _ = main ()
