@@ -335,8 +335,8 @@ let main () =
       (name_of_block_device md.md_dev)
       (match md.sync_action with
        | SyncIdle  -> "idle"
-       | ((SyncCheck { sync_speed; sync_completed = (at, last) })
-         | (SyncRecover { sync_speed; sync_completed = (at, last) })) as action ->
+       | (SyncCheck sync_action | SyncRecover sync_action) as action ->
+         let { sync_speed; sync_completed = (at, last) } = sync_action in
          let fin = now +. Int64.(to_float last -. to_float at) /. 2.0 /. float sync_speed in
          Printf.sprintf "%s %.1f%% completed (%.1f Mi/s), ETA %s"
            (match action with
