@@ -40,6 +40,7 @@ type sync_action = SyncIdle | SyncCheck of sync_action' | SyncRecover of sync_ac
 type md = {
   md_dev       : device;
   devices      : device list;
+  spare_devices: device list;
   array_state  : [`Clean | `Other of string];
   degraded     : int;
   level        : [`Raid0 | `Raid1 | `Raid5 | `Raid6 | `Other of string];
@@ -158,15 +159,26 @@ let level_of_string = function
 
 let identity a = a
 
+let subtract xs ys = List.filter (fun x -> not (List.mem x ys)) xs
+
 let load_md_info base =
   let md = base ^ "/md" in
   let info name format = first_line (md ^ "/" ^ name) |> format in
-  let devices =
+  let num_disks = first_line (md ^ "/raid_disks") |> int_of_string in
+  let active_devices =
+    CCList.range 0 (num_disks - 1)
+    |> List.map (fun n -> Printf.sprintf "%s/rd%d/block/dev" md n)
+    |> List.filter Sys.file_exists
+    |> List.map read_dev
+  in
+  let all_devices =
     list_files md
     |> List.filter (pmatch ~pat:"^dev-.*")
     |> List.map (fun n ->Printf.sprintf "%s/%s/block/dev" md n)
     |> List.map read_dev
   in
+  let spare_devices = subtract all_devices active_devices in
+  let devices = subtract all_devices spare_devices in
   let md_dev = read_dev (base ^ "/dev") in
   let sync_action =
     let sync_action () =
@@ -179,7 +191,7 @@ let load_md_info base =
     | "check" -> SyncCheck (sync_action ())
     | other -> SyncOther other
   in
-  { md_dev; devices; sync_action;
+  { md_dev; devices; spare_devices; sync_action;
     array_state    = info "array_state" (function "clean" -> `Clean | other -> `Other other);
     degraded       = info "degraded" int_of_string;
     level          = info "level" level_of_string;
@@ -221,9 +233,12 @@ let btrfs_info () =
 let md_of_partitions mds partitions =
   ( mds |> CCList.filter_map @@ fun md ->
     match (partitions |> find_opt @@ fun partition ->
-           List.mem partition md.devices) with
-    | None -> None
-    | Some partition -> Some (name_of_block_device md.md_dev ^ "(" ^ name_of_block_device partition ^ ")") )
+           List.mem partition md.devices),
+          (partitions |> find_opt @@ fun partition ->
+           List.mem partition md.spare_devices)with
+    | None, None -> None
+    | Some partition, _ -> Some (name_of_block_device md.md_dev ^ "(" ^ name_of_block_device partition ^ ")")
+    | _, Some partition -> Some (name_of_block_device md.md_dev ^ "[S](" ^ name_of_block_device partition ^ ")") )
   |> function
   | [] -> None
   | info -> Some (String.concat "\n" info)
