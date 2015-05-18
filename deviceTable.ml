@@ -1,3 +1,5 @@
+open Util
+
 let list_files dir =
   let dir = Unix.opendir dir in
   let rec get_files aux =
@@ -20,10 +22,6 @@ let pmatch ~pat = Re.execp (Re_pcre.re pat |> Re.compile)
 let extract ~pat str = Re.get_all (Re.exec (Re_pcre.re pat |> Re.compile) str)
 
 let contents file = CCIO.with_in file CCIO.read_all 
-
-let const a b = a
-
-let flip f a b = f b a
 
 let first_line file =
   contents file |> Re.replace (Re_pcre.re ~flags:[`MULTILINE] "\n.*" |> Re.compile) ~f:(const "")
@@ -128,11 +126,6 @@ let disks () =
   (read_dev (block_base ^ "/" ^ block ^ "/dev"),
    partition_devices)
 
-let project1st f (x, y) = (f x, y)
-let project2nd f (x, y) = (x, f y)
-
-let project_to_2nd f x = (x, f x)
-
 let block_devices () =
   let base = "/dev" in
   list_files base
@@ -156,8 +149,6 @@ let level_of_string = function
   | "raid5" -> `Raid5
   | "raid6" -> `Raid6
   | other -> `Other other
-
-let identity a = a
 
 let subtract xs ys = List.filter (fun x -> not (List.mem x ys)) xs
 
