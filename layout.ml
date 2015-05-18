@@ -77,11 +77,11 @@ let middle_bars a b =
   let rec loop ofs ofs_a ofs_b accu =
     match ofs_a, ofs_b with
     | [], [] -> List.rev accu
-    | ofs_a::_::rest_a, ofs_b::_::rest_b when ofs_a == ofs && ofs_b == ofs ->
+    | ofs_a::_::rest_a, ofs_b::_::rest_b when ofs_a = ofs && ofs_b = ofs ->
       loop (ofs + 1) rest_a rest_b (P.text "+"::accu)
-    | ofs_a::_::rest_a, _ when ofs_a == ofs ->
+    | ofs_a::_::rest_a, _ when ofs_a = ofs ->
       loop (ofs + 1) rest_a ofs_b (P.text "+"::accu)
-    | _, ofs_b::_::rest_b when ofs_b == ofs ->
+    | _, ofs_b::_::rest_b when ofs_b = ofs ->
       loop (ofs + 1) ofs_a rest_b (P.text "+"::accu)
     | _ ->
       loop (ofs + 1) ofs_a ofs_b (P.text "-"::accu)
