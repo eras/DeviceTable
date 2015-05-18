@@ -353,7 +353,9 @@ let main () =
       grid.(row' + 1).(col + 1) <- label;
     done;
     row' + 1 ) |> ignore;
-  P.output stdout (P.grid grid);
+  (* let layout = P.grid grid in *)
+  let layout = List.map Array.to_list (Array.to_list grid) |> Layout.horizontal_lists in
+  P.output stdout layout;
   Printf.printf "\n";
   let now = Unix.gettimeofday () in
   ctx.mds |> List.iter @@ fun md ->
