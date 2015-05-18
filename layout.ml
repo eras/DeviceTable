@@ -103,8 +103,7 @@ let horizontal_lists rows =
   let layout = P.vlist ~bars:false (adjusted_rows |> List.map @@ fun boxes ->
                                     (P.hlist ~bars:false boxes))
   in
-  P.output Pervasives.stdout layout;
-  max_width
+  layout
 
 let foo () =
   horizontal_lists
