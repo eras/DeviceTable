@@ -33,7 +33,12 @@ type sync_action' = {
   sync_completed : (int64 * int64);
 }
 
-type sync_action = SyncIdle | SyncCheck of sync_action' | SyncRecover of sync_action' | SyncOther of string
+type sync_action =
+  | SyncIdle
+  | SyncCheck of sync_action'
+  | SyncRecover of sync_action'
+  | SyncOther of string
+  | SyncStopped
 
 type md = {
   md_dev       : device;
@@ -152,10 +157,18 @@ let level_of_string = function
 
 let subtract xs ys = List.filter (fun x -> not (List.mem x ys)) xs
 
+let int_of_empty_or_string = function
+  | "" -> 0
+  | str -> int_of_string str
+
 let load_md_info base =
   let md = base ^ "/md" in
   let info name format = first_line (md ^ "/" ^ name) |> format in
-  let num_disks = first_line (md ^ "/raid_disks") |> int_of_string in
+  let info_opt name format =
+    try Some (first_line (md ^ "/" ^ name) |> format)
+    with Sys_error _ -> None
+  in
+  let num_disks = first_line (md ^ "/raid_disks") |> int_of_empty_or_string in
   let active_devices =
     CCList.range 0 (num_disks - 1)
     |> List.map (fun n -> Printf.sprintf "%s/rd%d/block/dev" md n)
@@ -176,18 +189,19 @@ let load_md_info base =
       { sync_speed     = info "sync_speed" int_of_string;
         sync_completed = info "sync_completed" (fun s -> Scanf.sscanf s "%Ld / %Ld" (fun a b -> (a, b))) }
     in
-    match info "sync_action" identity with
-    | "recover" -> SyncRecover (sync_action ())
-    | "idle" -> SyncIdle
-    | "check" -> SyncCheck (sync_action ())
-    | other -> SyncOther other
+    match info_opt "sync_action" identity with
+    | Some "recover" -> SyncRecover (sync_action ())
+    | Some "idle" -> SyncIdle
+    | Some "check" -> SyncCheck (sync_action ())
+    | Some other -> SyncOther other
+    | None -> SyncStopped
   in
   { md_dev; devices; spare_devices; sync_action;
     array_state    = info "array_state" (function "clean" -> `Clean | other -> `Other other);
-    degraded       = info "degraded" int_of_string;
+    degraded       = CCOpt.get 0 (info_opt "degraded" int_of_string);
     level          = info "level" level_of_string;
-    mismatch_cnt   = info "mismatch_cnt" int_of_string;
-    raid_disks     = info "raid_disks" int_of_string;
+    mismatch_cnt   = CCOpt.get 0 (info_opt "mismatch_cnt" int_of_string);
+    raid_disks     = info "raid_disks" int_of_empty_or_string;
   }
 
 let load_all_md_info () =
@@ -359,6 +373,7 @@ let main () =
            Int64.(to_float at /. to_float last *. 100.0)
            (float sync_speed /. 1024.)
            (string_of_time fin)
-       | SyncOther other -> other)
+       | SyncOther other -> other
+       | SyncStopped -> "stopped")
 
 let _ = main ()
