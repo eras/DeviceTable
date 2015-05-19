@@ -69,6 +69,7 @@ let row_frames row =
    the places where even objects are (so it assumes each row has a bar
    character at every other slot, beginning from the first element
    being a bar). *)
+(* TODO: I guess it should just skip empty objects *)
 let middle_bars a b =
   let offsets = function
     | None -> []
