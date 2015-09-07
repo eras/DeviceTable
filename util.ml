@@ -41,3 +41,4 @@ let rec transpose list = match list with
   | (x::xs) :: xss ->
       (x :: List.map List.hd xss) :: transpose (xs :: List.map List.tl xss)
 
+let (^/) a b = a ^ "/" ^ b      

@@ -28,6 +28,31 @@ let first_line file =
 
 type device = Device of (int * int)
 
+type device_state =
+  | DS_Faulty
+  | DS_InSync
+  | DS_WriteMostly
+  | DS_Blocked
+  | DS_Spare
+  | DS_Write
+  | DS_WantReplacement
+  | DS_Unsupported of string
+
+let device_state_of_string = function
+  | "faulty"           -> DS_Faulty
+  | "in_sync"          -> DS_InSync
+  | "writemostly"      -> DS_WriteMostly
+  | "blocked"          -> DS_Blocked
+  | "spare"            -> DS_Spare
+  | "write"            -> DS_Write
+  | "want_replacement" -> DS_WantReplacement
+  | other              -> DS_Unsupported other
+
+type device_info = {
+  di_device : device;
+  di_state : device_state;
+}
+
 type sync_action' = {
   sync_speed     : int;
   sync_completed : (int64 * int64);
@@ -42,8 +67,7 @@ type sync_action =
 
 type md = {
   md_dev       : device;
-  devices      : device list;
-  spare_devices: device list;
+  devices      : device_info list;
   array_state  : [`Clean | `Other of string];
   degraded     : int;
   level        : [`Raid0 | `Raid1 | `Raid5 | `Raid6 | `Other of string];
@@ -114,6 +138,10 @@ let read_dev dev_file =
   | major::minor::_ -> Device (int_of_string major, int_of_string minor)
   | _ -> failwith ("cannot read device number from " ^ dev_file)
 
+let device_info base =
+  { di_device = read_dev (base ^/ "block/dev");
+    di_state = device_state_of_string (first_line (base ^/ "state")) }
+
 let disks () =
   let block_base = "/sys/block" in
   list_files block_base
@@ -168,21 +196,13 @@ let load_md_info base =
     try Some (first_line (md ^ "/" ^ name) |> format)
     with Sys_error _ -> None
   in
-  let num_disks = first_line (md ^ "/raid_disks") |> int_of_empty_or_string in
-  let active_devices =
-    CCList.range 0 (num_disks - 1)
-    |> List.map (fun n -> Printf.sprintf "%s/rd%d/block/dev" md n)
-    |> List.filter Sys.file_exists
-    |> List.map read_dev
-  in
-  let all_devices =
+  (* let num_disks = first_line (md ^ "/raid_disks") |> int_of_empty_or_string in *)
+  let devices =
     list_files md
     |> List.filter (pmatch ~pat:"^dev-.*")
-    |> List.map (fun n ->Printf.sprintf "%s/%s/block/dev" md n)
-    |> List.map read_dev
+    |> List.map (fun n -> Printf.sprintf "%s/%s" md n)
+    |> List.map device_info
   in
-  let spare_devices = subtract all_devices active_devices in
-  let devices = subtract all_devices spare_devices in
   let md_dev = read_dev (base ^ "/dev") in
   let sync_action =
     let sync_action () =
@@ -196,7 +216,7 @@ let load_md_info base =
     | Some other -> SyncOther other
     | None -> SyncStopped
   in
-  { md_dev; devices; spare_devices; sync_action;
+  { md_dev; devices; sync_action;
     array_state    = info "array_state" (function "clean" -> `Clean | other -> `Other other);
     degraded       = CCOpt.get 0 (info_opt "degraded" int_of_string);
     level          = info "level" level_of_string;
@@ -235,15 +255,26 @@ let btrfs_info () =
     btrfs_label = first_line (fs_base ^ "/label");
     btrfs_devices = devices; }
 
-let md_of_partitions mds partitions =
+let md_info_of_partitions mds partitions =
+  let character_of_device_state = function
+    | DS_Faulty -> "F"
+    | DS_InSync -> ""
+    | DS_WriteMostly -> "W"
+    | DS_Blocked -> "B"
+    | DS_Spare -> "S"
+    | DS_Write -> "W"
+    | DS_WantReplacement -> "R"
+    | DS_Unsupported str -> "Unsupported(" ^ str ^ ")"
+  in
   ( mds |> CCList.filter_map @@ fun md ->
-    match (partitions |> find_opt @@ fun partition ->
-           List.mem partition md.devices),
-          (partitions |> find_opt @@ fun partition ->
-           List.mem partition md.spare_devices)with
-    | None, None -> None
-    | Some partition, _ -> Some (name_of_block_device md.md_dev ^ "(" ^ name_of_block_device partition ^ ")")
-    | _, Some partition -> Some (name_of_block_device md.md_dev ^ "[S](" ^ name_of_block_device partition ^ ")") )
+    match (partitions |> CCList.filter_map @@ fun partition ->
+           find_opt (fun di -> di.di_device = partition) md.devices)
+    with
+    | [] -> None
+    | { di_state; di_device }::insert_code ->
+       let ch = character_of_device_state di_state in
+       let ch = if ch = "" then "" else "[" ^ ch ^ "]" in
+       Some (name_of_block_device md.md_dev ^ ch ^ "(" ^ name_of_block_device di_device ^ ")") )
   |> function
   | [] -> None
   | info -> Some (String.concat "\n" info)
@@ -303,7 +334,7 @@ let label_of_position ctx row col =
     | None -> partitions
     | Some device -> device::partitions
   in
-  let md = md_of_partitions ctx.mds partitions' in
+  let md = md_info_of_partitions ctx.mds partitions' in
   let mounts =
     CCList.filter_map
       (fun partition -> try Some ((List.assoc partition mounts).m_mountpoint ^ "(" ^ name_of_block_device partition ^ ")") with Not_found -> None)
@@ -321,7 +352,8 @@ let label_of_position ctx row col =
   in
   label
 
-let main () = 
+let main () =
+  (* Containers_misc.PrintBox.set_string_len Text.length; *)
   let slot_dir = "/dev/disk/by-slot" in
   let devices = List.filter (pmatch ~pat:"^[0-9]+-[0-9]+$") (list_files
                                                                slot_dir) in
