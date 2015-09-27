@@ -28,7 +28,7 @@ let first_line file =
 
 type device = Device of (int * int)
 
-type device_state =
+type device_state' =
   | DS_Faulty
   | DS_InSync
   | DS_WriteMostly
@@ -38,15 +38,18 @@ type device_state =
   | DS_WantReplacement
   | DS_Unsupported of string
 
-let device_state_of_string = function
-  | "faulty"           -> DS_Faulty
-  | "in_sync"          -> DS_InSync
-  | "writemostly"      -> DS_WriteMostly
-  | "blocked"          -> DS_Blocked
-  | "spare"            -> DS_Spare
-  | "write"            -> DS_Write
-  | "want_replacement" -> DS_WantReplacement
-  | other              -> DS_Unsupported other
+type device_state = device_state' list
+      
+let device_state_of_string state =
+  Re.split (Re_pcre.re "," |> Re.compile) state |> List.map @@ function
+    | "faulty"           -> DS_Faulty
+    | "in_sync"          -> DS_InSync
+    | "writemostly"      -> DS_WriteMostly
+    | "blocked"          -> DS_Blocked
+    | "spare"            -> DS_Spare
+    | "write"            -> DS_Write
+    | "want_replacement" -> DS_WantReplacement
+    | other              -> DS_Unsupported other
 
 type device_info = {
   di_device : device;
@@ -272,7 +275,7 @@ let md_info_of_partitions mds partitions =
     with
     | [] -> None
     | { di_state; di_device }::insert_code ->
-       let ch = character_of_device_state di_state in
+       let ch = String.concat "" @@ List.map character_of_device_state di_state in
        let ch = if ch = "" then "" else "[" ^ ch ^ "]" in
        Some (name_of_block_device md.md_dev ^ ch ^ "(" ^ name_of_block_device di_device ^ ")") )
   |> function
