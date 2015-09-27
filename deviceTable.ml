@@ -36,6 +36,7 @@ type device_state' =
   | DS_Spare
   | DS_Write
   | DS_WantReplacement
+  | DS_Replacement
   | DS_Unsupported of string
 
 type device_state = device_state' list
@@ -49,6 +50,7 @@ let device_state_of_string state =
     | "spare"            -> DS_Spare
     | "write"            -> DS_Write
     | "want_replacement" -> DS_WantReplacement
+    | "replacement"      -> DS_Replacement
     | other              -> DS_Unsupported other
 
 type device_info = {
@@ -267,6 +269,7 @@ let md_info_of_partitions mds partitions =
     | DS_Spare -> "S"
     | DS_Write -> "W"
     | DS_WantReplacement -> "R"
+    | DS_Replacement -> "r"
     | DS_Unsupported str -> "Unsupported(" ^ str ^ ")"
   in
   ( mds |> CCList.filter_map @@ fun md ->
