@@ -63,22 +63,30 @@ type sync_action' = {
   sync_completed : (int64 * int64);
 }
 
+type reshape = {
+  reshape_sync_action : sync_action';
+  reshape_to_disks    : int;
+  reshape_from_disks  : int option;
+}
+
 type sync_action =
   | SyncIdle
   | SyncCheck of sync_action'
   | SyncRecover of sync_action'
+  | SyncReshape of reshape
   | SyncOther of string
   | SyncStopped
 
 type md = {
-  md_dev       : device;
-  devices      : device_info list;
-  array_state  : [`Clean | `Other of string];
-  degraded     : int;
-  level        : [`Raid0 | `Raid1 | `Raid5 | `Raid6 | `Other of string];
-  mismatch_cnt : int;
-  raid_disks   : int;
-  sync_action  : sync_action;
+  md_dev          : device;
+  devices         : device_info list;
+  array_state     : [`Clean | `Other of string];
+  degraded        : int;
+  level           : [`Raid0 | `Raid1 | `Raid5 | `Raid6 | `Other of string];
+  mismatch_cnt    : int;
+  raid_disks      : int;
+  prev_raid_disks : int option;
+  sync_action     : sync_action;
 }
 
 let drop_while f xs =
@@ -194,6 +202,18 @@ let int_of_empty_or_string = function
   | "" -> 0
   | str -> int_of_string str
 
+let try_sscanf str fmt f =
+  try Scanf.sscanf str fmt f
+  with _ -> None
+
+let raid_disks_of_string str =
+  match try_sscanf str "%d (%d)" (fun x y -> Some (x, y)) with
+  | Some (x, y) -> (x, Some y)
+  | None ->
+    match try_sscanf str "%d" (fun x -> Some x) with
+    | Some x -> (x, None)
+    | None -> (0, None)
+
 let load_md_info base =
   let md = base ^ "/md" in
   let info name format = first_line (md ^ "/" ^ name) |> format in
@@ -209,6 +229,7 @@ let load_md_info base =
     |> List.map device_info
   in
   let md_dev = read_dev (base ^ "/dev") in
+  let raid_disks, prev_raid_disks = info "raid_disks" raid_disks_of_string in
   let sync_action =
     let sync_action () =
       { sync_speed     = info "sync_speed" int_of_string;
@@ -218,6 +239,9 @@ let load_md_info base =
     | Some "recover" -> SyncRecover (sync_action ())
     | Some "idle" -> SyncIdle
     | Some "check" -> SyncCheck (sync_action ())
+    | Some "reshape" -> SyncReshape { reshape_sync_action = sync_action ();
+                                      reshape_to_disks = raid_disks;
+                                      reshape_from_disks = prev_raid_disks }
     | Some other -> SyncOther other
     | None -> SyncStopped
   in
@@ -226,7 +250,8 @@ let load_md_info base =
     degraded       = CCOpt.get 0 (info_opt "degraded" int_of_string);
     level          = info "level" level_of_string;
     mismatch_cnt   = CCOpt.get 0 (info_opt "mismatch_cnt" int_of_string);
-    raid_disks     = info "raid_disks" int_of_empty_or_string;
+    raid_disks;
+    prev_raid_disks;
   }
 
 let load_all_md_info () =
@@ -358,6 +383,16 @@ let label_of_position ctx row col =
   in
   label
 
+let string_of_sync_action' sync_action description =
+  let now = Unix.gettimeofday () in
+  let { sync_speed; sync_completed = (at, last) } = sync_action in
+  let fin = now +. Int64.(to_float last -. to_float at) /. 2.0 /. float sync_speed in
+  Printf.sprintf "%s %.1f%% completed (%.1f Mi/s), ETA %s"
+    description
+    Int64.(to_float at /. to_float last *. 100.0)
+    (float sync_speed /. 1024.)
+    (string_of_time fin)
+
 let main () =
   (* Containers_misc.PrintBox.set_string_len Text.length; *)
   let slot_dir = "/dev/disk/by-slot" in
@@ -395,7 +430,6 @@ let main () =
   let layout = List.map Array.to_list (Array.to_list grid) |> Layout.horizontal_lists in
   P.output stdout layout;
   Printf.printf "\n";
-  let now = Unix.gettimeofday () in
   ctx.mds |> List.iter @@ fun md ->
   if md.sync_action <> SyncIdle then
     Printf.printf "%s status: %s\n%!"
@@ -403,16 +437,21 @@ let main () =
       (match md.sync_action with
        | SyncIdle  -> "idle"
        | (SyncCheck sync_action | SyncRecover sync_action) as action ->
-         let { sync_speed; sync_completed = (at, last) } = sync_action in
-         let fin = now +. Int64.(to_float last -. to_float at) /. 2.0 /. float sync_speed in
-         Printf.sprintf "%s %.1f%% completed (%.1f Mi/s), ETA %s"
-           (match action with
-            | SyncCheck _ -> "checking"
-            | SyncRecover _ -> "recovering"
-            | _ -> assert false)
-           Int64.(to_float at /. to_float last *. 100.0)
-           (float sync_speed /. 1024.)
-           (string_of_time fin)
+         let description = match action with
+           | SyncCheck _ -> "checking"
+           | SyncRecover _ -> "recovering"
+           | _ -> assert false
+         in
+         string_of_sync_action' sync_action description
+       | SyncReshape reshape ->
+           string_of_sync_action' reshape.reshape_sync_action (
+             "reshaping " ^
+             ( match reshape.reshape_from_disks with
+               | None -> "unknown"
+               | Some n -> string_of_int n )
+             ^ " => " ^ string_of_int reshape.reshape_to_disks
+             ^ " disks"
+           )
        | SyncOther other -> other
        | SyncStopped -> "stopped")
 
