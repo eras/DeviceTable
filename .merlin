@@ -5,7 +5,7 @@ PKG batteries
 PKG ppx_deriving.show
 PKG toml
 PKG containers
-PKG containers.misc
+PKG containers_misc
 PKG text
 PKG re
 PKG re.pcre
