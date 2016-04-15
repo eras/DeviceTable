@@ -45,13 +45,8 @@ let parent_device_of_device_name name =
   then None
   else Some parent
 
-let read_dev dev_file =
-  first_line dev_file |> Re.split (Re_pcre.re ":" |> Re.compile) |> function
-  | major::minor::_ -> Types.Device (int_of_string major, int_of_string minor)
-  | _ -> failwith ("cannot read device number from " ^ dev_file)
-
 let md_device_info base =
-  { Md.md_di_device = read_dev (base ^/ "block/dev");
+  { Md.md_di_device = Util.read_dev (base ^/ "block/dev");
     md_di_state = Md.md_device_state_of_string (first_line (base ^/ "state")) }
 
 let disks () =
@@ -66,12 +61,12 @@ let disks () =
   let partition_devices =
     partitions
     |> List.map (fun partition -> block_base ^ "/" ^ block ^ "/" ^ partition ^ "/dev")
-    |> List.map read_dev
+    |> List.map Util.read_dev
   in
-  (read_dev (block_base ^ "/" ^ block ^ "/dev"),
+  (Util.read_dev (block_base ^ "/" ^ block ^ "/dev"),
    partition_devices)
 
-let device_of_name name = read_dev ("/sys/block/" ^ name ^ "/dev")
+let device_of_name name = Util.read_dev ("/sys/block/" ^ name ^ "/dev")
 
 let level_of_string = function
   | "raid0" -> `Raid0
@@ -112,7 +107,7 @@ let load_md_info base =
     |> List.map (fun n -> Printf.sprintf "%s/%s" md n)
     |> List.map md_device_info
   in
-  let md_dev = read_dev (base ^ "/dev") in
+  let md_dev = Util.read_dev (base ^ "/dev") in
   let raid_disks, prev_raid_disks = info "raid_disks" raid_disks_of_string in
   let sync_action =
     let open Md in
@@ -144,31 +139,6 @@ let load_all_md_info () =
   let mds = List.filter (fun d -> Sys.file_exists (d ^ "/md")) bds in
   List.map load_md_info mds
 
-type btrfs = {
-  btrfs_id      : string;
-  btrfs_label   : string;
-  btrfs_devices : Types.device list;
-}
-
-let btrfs_info () =
-  let base = "/sys/fs/btrfs" in
-  let fs_ids = list_files base |> List.filter (pmatch ~pat:"^.+-.+-.+-.+-.+$") in
-  fs_ids |> List.map @@ fun fs_id ->
-  let fs_base = base ^ "/" ^ fs_id in
-  let devices = list_files_with_base (fs_base ^ "/devices") |> List.map (fun s -> s ^ "/dev") |> List.map read_dev in
-  { btrfs_id = fs_id;
-    btrfs_label = first_line (fs_base ^ "/label");
-    btrfs_devices = devices; }
-
-let btrfss_for_partitions btrfs partitions =
-  let btrfs_for_partition partition =
-    btrfs |> CCList.filter_map @@ fun btrfs ->
-    if List.mem partition btrfs.btrfs_devices
-    then Some (partition, btrfs)
-    else None
-  in
-  CCList.map btrfs_for_partition partitions |> List.concat
-
 let string_of_tm { Unix.tm_sec = sec;
                    tm_min = min;
                    tm_hour = hour;
@@ -199,7 +169,7 @@ type ctx = {
   links : (string * string) list;
   disks : (Types.device * Types.device list) list;
   mds : Md.t CCList.t;
-  btrfs : btrfs list;
+  btrfs : Btrfs.t list;
 }
 
 let label_of_position ctx row col =
@@ -221,7 +191,7 @@ let label_of_position ctx row col =
       (fun partition -> try Some ((List.assoc partition mounts).m_mountpoint ^ "(" ^ name_of_block_device partition ^ ")") with Not_found -> None)
       partitions'
   in
-  let btrfs = btrfss_for_partitions ctx.btrfs partitions' in
+  let btrfs = Btrfs.btrfss_for_partitions ctx.btrfs partitions' in
   let label =
     Printf.ksprintf P.text "%s%s%s%s"
       (CCOpt.get "" device_name)
@@ -229,7 +199,7 @@ let label_of_position ctx row col =
        | None -> ""
        | Some md -> "\n" ^ md)
       (mounts |> List.map (fun m -> "\n" ^ m) |> String.concat "")
-      ((btrfs |> List.map @@ fun (partition, btrfs) -> "\n" ^ "btrfs " ^ btrfs.btrfs_label ^ "(" ^ name_of_block_device partition ^ ")") |> String.concat "")
+      ((btrfs |> List.map @@ fun (partition, btrfs) -> "\n" ^ "btrfs " ^ btrfs.Btrfs.btrfs_label ^ "(" ^ name_of_block_device partition ^ ")") |> String.concat "")
   in
   label
 
@@ -261,7 +231,7 @@ let main () =
   let ctx =
     let disks = disks () in
     let mds   = load_all_md_info () in
-    let btrfs = btrfs_info () in
+    let btrfs = Btrfs.btrfs_info () in
     { links; disks; mds; btrfs }
   in
   for col = 0 to 3 do

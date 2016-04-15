@@ -105,3 +105,8 @@ let name_of_block_device =
   fun ((Types.Device (major, minor)) as device) ->
     try List.assoc device names
     with Not_found -> Printf.sprintf "%d:%d" major minor
+
+let read_dev dev_file =
+  first_line dev_file |> Re.split (Re_pcre.re ":" |> Re.compile) |> function
+  | major::minor::_ -> Types.Device (int_of_string major, int_of_string minor)
+  | _ -> failwith ("cannot read device number from " ^ dev_file)
