@@ -85,3 +85,7 @@ let md_info_of_partitions mds partitions =
   |> function
   | [] -> None
   | info -> Some (String.concat "\n" info)
+
+let md_device_info base =
+  { md_di_device = Util.read_dev (base ^/ "block/dev");
+    md_di_state = md_device_state_of_string (Util.first_line (base ^/ "state")) }

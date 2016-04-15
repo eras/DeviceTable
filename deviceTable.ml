@@ -45,10 +45,6 @@ let parent_device_of_device_name name =
   then None
   else Some parent
 
-let md_device_info base =
-  { Md.md_di_device = Util.read_dev (base ^/ "block/dev");
-    md_di_state = Md.md_device_state_of_string (first_line (base ^/ "state")) }
-
 let disks () =
   let block_base = "/sys/block" in
   list_files block_base
@@ -93,7 +89,7 @@ let load_md_info base =
     list_files md
     |> List.filter (pmatch ~pat:"^dev-.*")
     |> List.map (fun n -> Printf.sprintf "%s/%s" md n)
-    |> List.map md_device_info
+    |> List.map Md.md_device_info
   in
   let md_dev = Util.read_dev (base ^ "/dev") in
   let raid_disks, prev_raid_disks = info "raid_disks" raid_disks_of_string in
