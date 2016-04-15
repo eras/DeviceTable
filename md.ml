@@ -1,3 +1,5 @@
+open Util.Op
+
 type md_device_state' =
   | DS_Faulty
   | DS_InSync
