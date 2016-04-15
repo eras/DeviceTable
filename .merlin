@@ -4,6 +4,7 @@ PKG cmdliner
 PKG batteries
 PKG ppx_deriving.show
 PKG toml
+PKG containers
 PKG containers.misc
 PKG text
 PKG re
