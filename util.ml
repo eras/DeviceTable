@@ -110,3 +110,15 @@ let read_dev dev_file =
   first_line dev_file |> Re.split (Re_pcre.re ":" |> Re.compile) |> function
   | major::minor::_ -> Types.Device (int_of_string major, int_of_string minor)
   | _ -> failwith ("cannot read device number from " ^ dev_file)
+
+let device_of_name name = read_dev ("/sys/block/" ^ name ^ "/dev")
+
+let subtract xs ys = List.filter (fun x -> not (List.mem x ys)) xs
+
+let int_of_empty_or_string = function
+  | "" -> 0
+  | str -> int_of_string str
+
+let try_sscanf str fmt f =
+  try Scanf.sscanf str fmt f
+  with _ -> None

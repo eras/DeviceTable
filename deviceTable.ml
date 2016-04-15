@@ -66,24 +66,12 @@ let disks () =
   (Util.read_dev (block_base ^ "/" ^ block ^ "/dev"),
    partition_devices)
 
-let device_of_name name = Util.read_dev ("/sys/block/" ^ name ^ "/dev")
-
 let level_of_string = function
   | "raid0" -> `Raid0
   | "raid1" -> `Raid1
   | "raid5" -> `Raid5
   | "raid6" -> `Raid6
   | other -> `Other other
-
-let subtract xs ys = List.filter (fun x -> not (List.mem x ys)) xs
-
-let int_of_empty_or_string = function
-  | "" -> 0
-  | str -> int_of_string str
-
-let try_sscanf str fmt f =
-  try Scanf.sscanf str fmt f
-  with _ -> None
 
 let raid_disks_of_string str =
   match try_sscanf str "%d (%d)" (fun x y -> Some (x, y)) with
@@ -118,7 +106,7 @@ let load_md_info base =
     match info_opt "sync_action" identity with
     | Some "recover" -> SyncRecover (sync_action ())
     | Some "idle" -> SyncIdle
-    | Some "check" -> SyncCheck (sync_action ())
+
     | Some "reshape" -> SyncReshape { reshape_sync_action = sync_action ();
                                       reshape_to_disks = raid_disks;
                                       reshape_from_disks = prev_raid_disks }
