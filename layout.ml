@@ -1,6 +1,6 @@
 open Util
 
-module P = Containers_misc.PrintBox
+module P = PrintBox
 
 (* Given a matrix of values, for each column find the maximum value
    and put them in order to result list *)
@@ -16,7 +16,7 @@ let box_height box =
 
 (* [rpad n box] pads an object by adding n spaces to its right side *)
 let rpad n box =
-  let open Containers_misc.PrintBox in
+  let open P in
   hlist ~bars:false [box; text (String.make n ' ')]
 
 (* return a box padded by its right side so that it is at least

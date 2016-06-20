@@ -157,7 +157,7 @@ type ctx = {
 }
 
 let label_of_position ctx row col =
-  let module P = Containers_misc.PrintBox in
+  let module P = PrintBox in
   let device_name = 
     try Some (List.assoc (Printf.sprintf "%d-%d" row col) ctx.links)
     with Not_found -> None
@@ -210,7 +210,7 @@ let main () =
     let map = List.combine devices shortlinks in
     map
   in
-  let module P = Containers_misc.PrintBox in
+  let module P = PrintBox in
   let grid = Array.make_matrix 7 5 P.empty in
   let ctx =
     let disks = disks () in
